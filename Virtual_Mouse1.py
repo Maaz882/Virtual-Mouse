@@ -19,7 +19,10 @@ screenCenter = (screenX // 2, screenY // 2)
 # Debug show resolution print(f"screen dimensions: {screenX}x{screenY}")
 scrollThreshold = 0.1  # Threshold for finger scrolling gesture
 scrollSpeed = 15  # Controls the speed of scrolling
+clickThreshold = 0.05  # Threshold for finger clicking gesture
 prevFingerPos = None  # Initialize prevFingerPos here
+SMOOTHING = 0.2  # adjust between 0.1 (more smooth) to 1.0 (no smooth)
+
 
 # cap = cv2.VideoCapture(0)
 
@@ -56,10 +59,24 @@ def start_program():
                       (rect_x_max, rect_y_max),
                       (255, 255, 0), 2)
 
-        if results.multi_hand_landmarks:
-            # Grab first (only) set of hand landmarks
+        if results.multi_hand_landmarks and results.multi_handedness:
             lm = results.multi_hand_landmarks[0]
- 
+            label = results.multi_handedness[0].classification[0].label
+            # print(f"Detected hand: {label}")
+            
+            if label == 'Right':
+                circle_color = (0, 255, 0)  # Green for right hand
+            else:
+                circle_color = (0, 0, 255)  # Red for left hand
+            circle_center = (w - 40, 40)  # (x, y)
+            radius = 20
+
+            cv2.circle(img, circle_center, radius, circle_color, thickness=-1)
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            text_pos = (circle_center[0] - 30, circle_center[1] + 40)
+            cv2.putText(img, label, text_pos, font, 0.7, (0, 0, 0), 2)
+
             # Isolate index fingertip and middle fingertip
             ttip = lm.landmark[mp_hands.HandLandmark.THUMB_TIP]
             iftip = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
@@ -111,23 +128,40 @@ def start_program():
 
             # Debug show fingertip coordinates by screen resolution 
             # print(f"X: {fingerX} | Y: {fingerY}")
-            if prevFingerPos is None or abs(fingerX - prevFingerPos[0]) > 5 or abs(
-                    fingerY - prevFingerPos[1]) > 5:
-                pyautogui.moveTo(fingerX, fingerY)
+            if prevFingerPos is None:
                 prevFingerPos = (fingerX, fingerY)
+
+            # Smooth movement
+            smoothedX = int(SMOOTHING * fingerX + (1 - SMOOTHING) * prevFingerPos[0])
+            smoothedY = int(SMOOTHING * fingerY + (1 - SMOOTHING) * prevFingerPos[1])
+
+            pyautogui.moveTo(smoothedX, smoothedY)
+            prevFingerPos = (smoothedX, smoothedY)
+
 
             # Calculate distance from each finger to the thumb
             leftDistance = ((iftip.x - ttip.x) ** 2 + (iftip.y - ttip.y) ** 2) ** 0.5
             rightDistance = ((mftip.x - ttip.x) ** 2 + (mftip.y - ttip.y) ** 2) ** 0.5
             quitDistance = ((rftip.x - ttip.x) ** 2 + (rftip.y - ttip.y) ** 2) ** 0.5
 
-            # Scroll if finger is close to thumb
-            if leftDistance < scrollThreshold:
-                pyautogui.scroll(scrollSpeed)
-            elif rightDistance < scrollThreshold:
-                pyautogui.scroll(-scrollSpeed)
-            # elif quitDistance < scrollThreshold:
-            #     stopProgram = True
+            if label == "Right":
+        
+                # Scroll if finger is close to thumb
+                if leftDistance < scrollThreshold:
+                    pyautogui.scroll(scrollSpeed)
+                elif rightDistance < scrollThreshold:
+                    pyautogui.scroll(-scrollSpeed)
+                # elif quitDistance < scrollThreshold:
+                #     stopProgram = True
+
+            elif label == "Left":
+                # Scroll if finger is close to thumb
+                if leftDistance < clickThreshold:
+                    pyautogui.leftClick()
+                elif rightDistance < clickThreshold:
+                    pyautogui.rightClick()
+                # elif quitDistance < scrollThreshold:
+                #     stopProgram = True
 
         cv2.imshow("Virtual Mouse", img)
         if cv2.waitKey(1) & 0xFF == ord('q'):
